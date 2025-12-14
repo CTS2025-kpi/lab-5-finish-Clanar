@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    healthcheck:
+        test: ["CMD", "rabbitmqctl", "status"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+   
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.coordinator
+    ports:
+      - "8080:8080"
+    environment:
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      - shard1-leader
+
+  rebalancer:
+    build:
+      context: .
+      dockerfile: Dockerfile.rebalancer
+    ports:
+      - "8081:8081"
+    environment:
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      - coordinator
+
+  shard1-leader:
+    build:
+      context: .
+      dockerfile: Dockerfile.shard
+    environment:
+      - ROLE=leader
+      - SHARD_NAME=shard1
+      - REPLICA_ID=leader
+      - RABBIT_URL=amqp://guest:guest@rabbitmq:5672/
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  shard1-follower-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.shard
+    environment:
+      - ROLE=follower
+      - SHARD_NAME=shard1
+      - REPLICA_ID=follower1
+      - RABBIT_URL=amqp://guest:guest@rabbitmq:5672/
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      - shard1-leader
+
+  shard1-follower-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.shard
+    environment:
+      - ROLE=follower
+      - SHARD_NAME=shard1
+      - REPLICA_ID=follower2
+      - RABBIT_URL=amqp://guest:guest@rabbitmq:5672/
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      - shard1-leader
+     
+  shard1-follower-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.shard
+    environment:
+      - ROLE=follower
+      - SHARD_NAME=shard1
+      - REPLICA_ID=follower3 
+      - RABBIT_URL=amqp://guest:guest@rabbitmq:5672/
+      - COORDINATOR_URL=http://coordinator:8080
+    depends_on:
+      - shard1-leader
